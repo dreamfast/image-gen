@@ -1,0 +1,9 @@
+runpod>=1.6.0
+diffusers>=0.30.0
+torch>=2.2.0
+accelerate>=0.25.0
+transformers>=4.36.0
+safetensors>=0.4.0
+huggingface_hub>=0.20.0
+sentencepiece
+protobuf
