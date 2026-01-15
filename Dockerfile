@@ -10,13 +10,19 @@ ENV PYTHONUNBUFFERED=1
 # Install git (needed for pip install from github)
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-# Note: diffusers must be installed from source for ZImagePipeline
+# Uninstall any existing diffusers (base image might have old version)
+RUN pip uninstall -y diffusers || true
+
+# Install diffusers from source (required for ZImagePipeline)
+RUN pip install --no-cache-dir git+https://github.com/huggingface/diffusers.git
+
+# Verify diffusers version and ZImagePipeline availability
+RUN python -c "import diffusers; print(f'diffusers version: {diffusers.__version__}')"
+RUN python -c "from diffusers import ZImagePipeline; print('ZImagePipeline imported successfully!')"
+
+# Install remaining dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Verify ZImagePipeline is available
-RUN python -c "from diffusers import ZImagePipeline; print('ZImagePipeline available!')"
 
 # Download Z-Image Turbo model from HuggingFace
 RUN python -c "from huggingface_hub import snapshot_download; \
