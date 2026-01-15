@@ -8,42 +8,95 @@ inference requests returning base64-encoded images.
 import base64
 import io
 import os
-import torch
-import runpod
-from diffusers import ZImagePipeline
+import sys
+import traceback
+
+print("=" * 60)
+print("Z-Image Turbo Handler Starting...")
+print("=" * 60)
+print(f"Python version: {sys.version}")
+print(f"Working directory: {os.getcwd()}")
+
+# Import torch first and check CUDA
+try:
+    import torch
+    print(f"PyTorch version: {torch.__version__}")
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA device: {torch.cuda.get_device_name(0)}")
+        print(f"CUDA memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+except Exception as e:
+    print(f"ERROR importing torch: {e}")
+    traceback.print_exc()
+    sys.exit(1)
+
+# Import runpod
+try:
+    import runpod
+    print(f"RunPod SDK loaded")
+except Exception as e:
+    print(f"ERROR importing runpod: {e}")
+    traceback.print_exc()
+    sys.exit(1)
+
+# Import diffusers - this is the likely failure point
+try:
+    from diffusers import ZImagePipeline
+    print(f"ZImagePipeline imported successfully")
+except ImportError as e:
+    print(f"ERROR: ZImagePipeline not found in diffusers!")
+    print(f"This usually means diffusers was not installed from source.")
+    print(f"Error: {e}")
+    traceback.print_exc()
+    sys.exit(1)
+except Exception as e:
+    print(f"ERROR importing ZImagePipeline: {e}")
+    traceback.print_exc()
+    sys.exit(1)
 
 # Model path (set during Docker build)
 MODEL_PATH = os.environ.get("MODEL_PATH", "/models/zimage")
+print(f"Model path: {MODEL_PATH}")
+print(f"Model path exists: {os.path.exists(MODEL_PATH)}")
+if os.path.exists(MODEL_PATH):
+    print(f"Model contents: {os.listdir(MODEL_PATH)[:10]}...")
 
 # Default generation settings
 DEFAULTS = {
     "width": 512,
     "height": 512,
-    "steps": 8,  # Actually 8 DiT forwards (steps=9 in API)
-    "negative_prompt": "blurry ugly bad",
+    "steps": 9,  # 9 steps = 8 DiT forwards (NFEs)
 }
 
 
 def load_pipeline():
     """Load the Z-Image Turbo pipeline."""
     print("Loading Z-Image Turbo pipeline...")
+    print(f"  torch_dtype: bfloat16")
+    print(f"  low_cpu_mem_usage: False")
 
     pipe = ZImagePipeline.from_pretrained(
         MODEL_PATH,
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=False,
     )
+    print("Pipeline loaded, moving to CUDA...")
     pipe.to("cuda")
-
-    # Optional: compile for faster inference (uncomment if torch.compile works)
-    # pipe.transformer = torch.compile(pipe.transformer, mode="reduce-overhead", fullgraph=True)
 
     print("Pipeline loaded successfully!")
     return pipe
 
 
 # Load pipeline at container start (stays warm)
-pipe = load_pipeline()
+try:
+    pipe = load_pipeline()
+    print("=" * 60)
+    print("Handler ready to accept requests!")
+    print("=" * 60)
+except Exception as e:
+    print(f"FATAL ERROR loading pipeline: {e}")
+    traceback.print_exc()
+    sys.exit(1)
 
 
 def handler(job):
@@ -52,14 +105,15 @@ def handler(job):
 
     Input:
         prompt (str): Image description
-        negative_prompt (str, optional): Negative prompt (default: "blurry ugly bad")
         width (int, optional): Image width (default: 512)
         height (int, optional): Image height (default: 512)
-        steps (int, optional): Inference steps (default: 8)
+        steps (int, optional): Inference steps (default: 9, which = 8 NFEs)
         seed (int, optional): Random seed (default: random)
 
     Output:
         image (str): Base64-encoded PNG image
+
+    Note: negative_prompt is ignored - Z-Image Turbo uses guidance_scale=0.0
     """
     job_input = job["input"]
 
@@ -68,28 +122,28 @@ def handler(job):
     if not prompt:
         return {"error": "Missing required parameter: prompt"}
 
-    negative_prompt = job_input.get("negative_prompt", DEFAULTS["negative_prompt"])
     width = job_input.get("width", DEFAULTS["width"])
     height = job_input.get("height", DEFAULTS["height"])
     steps = job_input.get("steps", DEFAULTS["steps"])
     seed = job_input.get("seed")
 
+    print(f"Generating image: {width}x{height}, steps={steps}, seed={seed}")
+    print(f"Prompt: {prompt[:100] if len(prompt) > 100 else prompt}")
+
     # Create generator with seed
     if seed is not None:
-        generator = torch.Generator("cuda").manual_seed(seed)
+        generator = torch.Generator("cuda").manual_seed(int(seed))
     else:
         generator = None
 
     try:
         # Generate image
-        # Note: Z-Image Turbo uses guidance_scale=0.0
-        # Note: steps+1 because "9 steps = 8 DiT forwards"
+        # Z-Image Turbo requires guidance_scale=0.0 (no CFG)
         result = pipe(
             prompt=prompt,
-            negative_prompt=negative_prompt,
             height=height,
             width=width,
-            num_inference_steps=steps + 1,
+            num_inference_steps=steps,
             guidance_scale=0.0,
             generator=generator,
         )
@@ -102,6 +156,8 @@ def handler(job):
         buffer.seek(0)
         image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
+        print(f"Image generated successfully: {len(image_b64)} bytes")
+
         return {
             "image": image_b64,
             "width": width,
@@ -110,6 +166,8 @@ def handler(job):
         }
 
     except Exception as e:
+        print(f"ERROR during generation: {e}")
+        traceback.print_exc()
         return {"error": str(e)}
 
 
