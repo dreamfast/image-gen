@@ -1,4 +1,4 @@
-FROM runpod/pytorch:2.2.0-py3.10-cuda12.1.1-devel-ubuntu22.04
+FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 WORKDIR /app
 
@@ -9,9 +9,6 @@ ENV PYTHONUNBUFFERED=1
 
 # Install git (needed for pip install from github)
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-
-# Uninstall any existing diffusers (base image might have old version)
-RUN pip uninstall -y diffusers || true
 
 # Install diffusers from source (required for ZImagePipeline)
 RUN pip install --no-cache-dir git+https://github.com/huggingface/diffusers.git
