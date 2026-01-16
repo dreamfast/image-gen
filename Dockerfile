@@ -7,6 +7,7 @@ ENV MODEL_PATH=/models/zimage
 ENV HF_HOME=/models/hf_cache
 ENV PYTHONUNBUFFERED=1
 
+
 # Install git (needed for pip install from github)
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
