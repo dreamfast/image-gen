@@ -66,6 +66,7 @@ DEFAULTS = {
     "width": 512,
     "height": 512,
     "steps": 9,  # 9 steps = 8 DiT forwards (NFEs)
+    "quality": 85,  # WebP quality (1-100)
 }
 
 
@@ -109,9 +110,14 @@ def handler(job):
         height (int, optional): Image height (default: 512)
         steps (int, optional): Inference steps (default: 9, which = 8 NFEs)
         seed (int, optional): Random seed (default: random)
+        quality (int, optional): WebP quality 1-100 (default: 85)
 
     Output:
-        image (str): Base64-encoded PNG image
+        image (str): Base64-encoded WebP image
+        format (str): "webp"
+        width (int): Image width
+        height (int): Image height
+        seed (int|null): Random seed used
 
     Note: negative_prompt is ignored - Z-Image Turbo uses guidance_scale=0.0
     """
@@ -126,8 +132,9 @@ def handler(job):
     height = job_input.get("height", DEFAULTS["height"])
     steps = job_input.get("steps", DEFAULTS["steps"])
     seed = job_input.get("seed")
+    quality = job_input.get("quality", DEFAULTS["quality"])
 
-    print(f"Generating image: {width}x{height}, steps={steps}, seed={seed}")
+    print(f"Generating image: {width}x{height}, steps={steps}, seed={seed}, quality={quality}")
     print(f"Prompt: {prompt[:100] if len(prompt) > 100 else prompt}")
 
     # Create generator with seed
@@ -150,9 +157,9 @@ def handler(job):
 
         image = result.images[0]
 
-        # Convert to base64 PNG
+        # Convert to base64 WebP (optimized for web)
         buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
+        image.save(buffer, format="WEBP", quality=quality, method=6)
         buffer.seek(0)
         image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
@@ -160,6 +167,7 @@ def handler(job):
 
         return {
             "image": image_b64,
+            "format": "webp",
             "width": width,
             "height": height,
             "seed": seed,
