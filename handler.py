@@ -71,19 +71,37 @@ DEFAULTS = {
 
 
 def load_pipeline():
-    """Load the Z-Image Turbo pipeline."""
+    """Load the Z-Image Turbo pipeline with memory optimizations."""
     print("Loading Z-Image Turbo pipeline...")
-    print(f"  torch_dtype: bfloat16")
-    print(f"  low_cpu_mem_usage: False")
+    print(f"  torch_dtype: float16")
+    print(f"  low_cpu_mem_usage: True")
 
     pipe = ZImagePipeline.from_pretrained(
         MODEL_PATH,
-        torch_dtype=torch.bfloat16,
-        low_cpu_mem_usage=False,
+        torch_dtype=torch.float16,  # float16 uses less memory than bfloat16
+        low_cpu_mem_usage=True,
     )
-    print("Pipeline loaded, moving to CUDA...")
-    pipe.to("cuda")
 
+    # IMPORTANT: Do NOT call pipe.to("cuda") before enabling offload!
+    # enable_model_cpu_offload() moves entire models to GPU only when needed
+    # (faster than sequential_cpu_offload which moves individual layers)
+    print("Enabling model CPU offload...")
+    pipe.enable_model_cpu_offload()
+
+    # Memory optimizations
+    if hasattr(pipe, 'enable_attention_slicing'):
+        pipe.enable_attention_slicing(1)
+        print("  Enabled attention slicing")
+
+    if hasattr(pipe, 'enable_vae_slicing'):
+        pipe.enable_vae_slicing()
+        print("  Enabled VAE slicing")
+
+    # Clear any cached memory
+    torch.cuda.empty_cache()
+
+    print(f"CUDA memory allocated: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+    print(f"CUDA memory reserved: {torch.cuda.memory_reserved() / 1e9:.2f} GB")
     print("Pipeline loaded successfully!")
     return pipe
 
@@ -134,7 +152,16 @@ def handler(job):
     seed = job_input.get("seed")
     quality = job_input.get("quality", DEFAULTS["quality"])
 
+    # Cap size to prevent OOM (max ~1MP on 24GB)
+    max_pixels = 1024 * 1024
+    if width * height > max_pixels:
+        scale = (max_pixels / (width * height)) ** 0.5
+        width = int(width * scale)
+        height = int(height * scale)
+        print(f"Resized to {width}x{height} to prevent OOM")
+
     print(f"Generating image: {width}x{height}, steps={steps}, seed={seed}, quality={quality}")
+    print(f"CUDA memory before generation: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
     print(f"Prompt: {prompt[:100] if len(prompt) > 100 else prompt}")
 
     # Create generator with seed
@@ -144,16 +171,17 @@ def handler(job):
         generator = None
 
     try:
-        # Generate image
-        # Z-Image Turbo requires guidance_scale=0.0 (no CFG)
-        result = pipe(
-            prompt=prompt,
-            height=height,
-            width=width,
-            num_inference_steps=steps,
-            guidance_scale=0.0,
-            generator=generator,
-        )
+        # Generate image with inference mode for memory efficiency
+        with torch.inference_mode():
+            # Z-Image Turbo requires guidance_scale=0.0 (no CFG)
+            result = pipe(
+                prompt=prompt,
+                height=height,
+                width=width,
+                num_inference_steps=steps,
+                guidance_scale=0.0,
+                generator=generator,
+            )
 
         image = result.images[0]
 
@@ -163,7 +191,12 @@ def handler(job):
         buffer.seek(0)
         image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
+        # Clean up to prevent memory buildup
+        del result
+        torch.cuda.empty_cache()
+
         print(f"Image generated successfully: {len(image_b64)} bytes")
+        print(f"CUDA memory after cleanup: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
         return {
             "image": image_b64,
@@ -173,7 +206,13 @@ def handler(job):
             "seed": seed,
         }
 
+    except torch.cuda.OutOfMemoryError as e:
+        torch.cuda.empty_cache()
+        print(f"OOM ERROR: {e}")
+        return {"error": f"Out of memory - try smaller image size (current: {width}x{height})"}
+
     except Exception as e:
+        torch.cuda.empty_cache()
         print(f"ERROR during generation: {e}")
         traceback.print_exc()
         return {"error": str(e)}
