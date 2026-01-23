@@ -82,11 +82,9 @@ def load_pipeline():
         low_cpu_mem_usage=True,
     )
 
-    # IMPORTANT: Do NOT call pipe.to("cuda") before enabling offload!
-    # enable_model_cpu_offload() moves entire models to GPU only when needed
-    # (faster than sequential_cpu_offload which moves individual layers)
-    print("Enabling model CPU offload...")
-    pipe.enable_model_cpu_offload()
+    # Load directly to GPU (like ComfyUI does)
+    print("Moving pipeline to CUDA...")
+    pipe.to("cuda")
 
     # Memory optimizations
     if hasattr(pipe, 'enable_attention_slicing'):
