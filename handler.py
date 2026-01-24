@@ -73,12 +73,12 @@ DEFAULTS = {
 def load_pipeline():
     """Load the Z-Image Turbo pipeline with memory optimizations."""
     print("Loading Z-Image Turbo pipeline...")
-    print(f"  torch_dtype: float16")
+    print(f"  torch_dtype: bfloat16")
     print(f"  low_cpu_mem_usage: True")
 
     pipe = ZImagePipeline.from_pretrained(
         MODEL_PATH,
-        torch_dtype=torch.float16,  # float16 uses less memory than bfloat16
+        torch_dtype=torch.bfloat16,  # Z-Image needs bfloat16, float16 causes black images
         low_cpu_mem_usage=True,
     )
 
@@ -202,6 +202,7 @@ def handler(job):
             "width": width,
             "height": height,
             "seed": seed,
+            "gpu": torch.cuda.get_device_name(0),
         }
 
     except torch.cuda.OutOfMemoryError as e:
