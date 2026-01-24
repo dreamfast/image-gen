@@ -40,12 +40,13 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
-# Import diffusers
+# Import diffusers and transformers for BNB config
 try:
     from diffusers import DiffusionPipeline
-    print("DiffusionPipeline imported successfully")
+    from transformers import BitsAndBytesConfig
+    print("DiffusionPipeline and BitsAndBytesConfig imported successfully")
 except Exception as e:
-    print(f"ERROR importing diffusers: {e}")
+    print(f"ERROR importing diffusers/transformers: {e}")
     traceback.print_exc()
     sys.exit(1)
 
@@ -73,7 +74,7 @@ DEFAULTS = {
     "width": 512,
     "height": 512,
     "steps": 9,  # 9 steps = 8 DiT forwards (NFEs)
-    "quality": 85,  # WebP quality (1-100)
+    "quality": 75,  # WebP quality (1-100)
 }
 
 
@@ -81,11 +82,17 @@ def load_pipeline():
     """Load the Z-Image Turbo 4-bit pipeline with LoRAs."""
     print("Loading Z-Image Turbo 4-bit pipeline...")
 
-    # Load the 4-bit quantized model
+    # Clear any existing CUDA memory
+    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+
+    # Load the 4-bit quantized model with memory optimizations
     pipe = DiffusionPipeline.from_pretrained(
         MODEL_PATH,
         torch_dtype=torch.bfloat16,
         cache_dir=HF_CACHE,
+        low_cpu_mem_usage=True,  # Load weights sequentially to reduce peak memory
     )
 
     # Move to GPU
@@ -128,11 +135,17 @@ def load_pipeline():
         pipe.enable_vae_slicing()
         print("  Enabled VAE slicing")
 
+    # Enable model CPU offload if needed (uncomment if hitting OOM)
+    # if hasattr(pipe, 'enable_model_cpu_offload'):
+    #     pipe.enable_model_cpu_offload()
+    #     print("  Enabled model CPU offload")
+
     # Clear any cached memory
     torch.cuda.empty_cache()
 
     print(f"CUDA memory allocated: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
     print(f"CUDA memory reserved: {torch.cuda.memory_reserved() / 1e9:.2f} GB")
+    print(f"CUDA max memory allocated: {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
     print("Pipeline loaded successfully!")
     return pipe
 
