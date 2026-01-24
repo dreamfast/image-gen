@@ -36,9 +36,10 @@ RUN python -c "import torch; v=torch.__version__; print(f'Final PyTorch: {v}'); 
 RUN python -c "import diffusers; print(f'diffusers version: {diffusers.__version__}')"
 RUN python -c "import bitsandbytes; print('bitsandbytes imported successfully')"
 
-# Pre-download the 4-bit quantized model
-RUN python -c "from diffusers import DiffusionPipeline; \
-    DiffusionPipeline.from_pretrained('unsloth/Z-Image-Turbo-unsloth-bnb-4bit', \
+# Pre-download the 4-bit quantized model files (without loading - no GPU during build)
+RUN pip install --no-cache-dir huggingface_hub && \
+    python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('unsloth/Z-Image-Turbo-unsloth-bnb-4bit', \
     cache_dir='/models/hf_cache')"
 
 # Create LoRA directory
