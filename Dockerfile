@@ -1,4 +1,4 @@
-FROM runpod/pytorch:1.0.3-cu1281-torch280-ubuntu2204
+FROM pytorch/pytorch:2.7.0-cuda12.8-cudnn9-devel
 
 WORKDIR /app
 
@@ -8,7 +8,7 @@ ENV GGUF_PATH=/models/z-image-turbo-Q6_K.gguf
 ENV LORA_PATH=/models/loras
 ENV HF_HOME=/models/hf_cache
 ENV PYTHONUNBUFFERED=1
-# Enable optimized CUDA kernels for GGUF (10% faster)
+# Enable optimized CUDA kernels for GGUF (torch27-cu128 is supported)
 ENV DIFFUSERS_GGUF_CUDA_KERNELS=true
 
 # Check initial PyTorch version
@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Install gguf package for GGUF model loading
 RUN pip install --no-cache-dir gguf
 
-# Install kernels for optimized CUDA GGUF inference
+# Install kernels for optimized CUDA GGUF inference (torch27-cu128 supported)
 RUN pip install --no-cache-dir kernels
 
 # Install diffusers from source WITHOUT letting it change torch
