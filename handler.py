@@ -42,8 +42,8 @@ except Exception as e:
 
 # Import diffusers
 try:
-    from diffusers import DiffusionPipeline
-    print("DiffusionPipeline imported successfully")
+    from diffusers import ZImagePipeline, FlowMatchEulerDiscreteScheduler
+    print("ZImagePipeline and FlowMatchEulerDiscreteScheduler imported successfully")
 except Exception as e:
     print(f"ERROR importing diffusers: {e}")
     traceback.print_exc()
@@ -86,13 +86,19 @@ def load_pipeline():
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
-    # Load the full BF16 model with memory optimizations
-    pipe = DiffusionPipeline.from_pretrained(
+    # Load the Z-Image pipeline (optimized for this model)
+    pipe = ZImagePipeline.from_pretrained(
         MODEL_PATH,
         torch_dtype=torch.bfloat16,
         cache_dir=HF_CACHE,
-        low_cpu_mem_usage=True,  # Load weights sequentially to reduce peak memory
     )
+
+    # Configure scheduler to use beta sigmas (matches ComfyUI "beta" scheduler)
+    pipe.scheduler = FlowMatchEulerDiscreteScheduler.from_config(
+        pipe.scheduler.config,
+        use_beta_sigmas=True,
+    )
+    print("Scheduler configured with beta sigmas")
 
     # Move to GPU
     print("Moving pipeline to CUDA...")
@@ -125,14 +131,14 @@ def load_pipeline():
     else:
         print("  No LoRAs loaded")
 
-    # Memory optimizations
-    if hasattr(pipe, 'enable_attention_slicing'):
-        pipe.enable_attention_slicing(1)
-        print("  Enabled attention slicing")
+    # Memory optimizations (disabled for quality - we have 24GB VRAM)
+    # if hasattr(pipe, 'enable_attention_slicing'):
+    #     pipe.enable_attention_slicing(1)
+    #     print("  Enabled attention slicing")
 
-    if hasattr(pipe, 'enable_vae_slicing'):
-        pipe.enable_vae_slicing()
-        print("  Enabled VAE slicing")
+    # if hasattr(pipe, 'enable_vae_slicing'):
+    #     pipe.enable_vae_slicing()
+    #     print("  Enabled VAE slicing")
 
     # Enable model CPU offload if needed (uncomment if hitting OOM)
     # if hasattr(pipe, 'enable_model_cpu_offload'):
@@ -181,7 +187,7 @@ def handler(job):
         seed (int|null): Random seed used
         gpu (str): GPU name used
 
-    Note: Z-Image Turbo uses guidance_scale=0.0 (no CFG)
+    Note: Z-Image Turbo uses guidance_scale=1.0 (matches ComfyUI)
     """
     job_input = job["input"]
 
@@ -226,13 +232,13 @@ def handler(job):
         signal.alarm(30)  # 30 second timeout
 
         with torch.inference_mode():
-            # Z-Image Turbo uses guidance_scale=0.0 (no CFG)
+            # Z-Image Turbo with CFG=1 (matches ComfyUI workflow)
             result = pipe(
                 prompt=prompt,
                 height=height,
                 width=width,
                 num_inference_steps=steps,
-                guidance_scale=0.0,
+                guidance_scale=1.0,
                 generator=generator,
             )
 
