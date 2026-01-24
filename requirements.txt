@@ -5,3 +5,4 @@ safetensors>=0.4.0
 huggingface_hub>=0.20.0
 sentencepiece
 protobuf
+peft>=0.10.0
