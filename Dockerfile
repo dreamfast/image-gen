@@ -59,9 +59,10 @@ RUN ls -la /models/*.gguf
 RUN mkdir -p /models/loras
 
 # Download LoRAs from BunnyCDN
-RUN wget -O /models/loras/better_nudes.safetensors "https://romancify-build.b-cdn.net/better_nudes.safetensors" && \
-    wget -O /models/loras/photo_enhance.safetensors "https://romancify-build.b-cdn.net/photo_enhance.safetensors" && \
-    wget -O /models/loras/nice_asians.safetensors "https://romancify-build.b-cdn.net/nice_asians.safetensors"
+# Note: We rename them to simpler names on download to avoid path issues
+RUN wget -O /models/loras/better_nudes.safetensors "https://romancify-build.b-cdn.net/b3tternud3s_v2.safetensors" && \
+    wget -O /models/loras/photo_enhance.safetensors "https://romancify-build.b-cdn.net/OB%E6%8B%8D%E7%AB%8B%E5%BE%97%E4%BA%BA%E5%83%8F%E6%91%84%E5%BD%B1Instant%20camera%20portrait%20photography%20V4.0.safetensors" && \
+    wget -O /models/loras/nice_asians.safetensors "https://romancify-build.b-cdn.net/NIceAsians_Zimage.safetensors"
 
 # Verify LoRA downloads
 RUN ls -la /models/loras/
