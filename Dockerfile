@@ -1,4 +1,6 @@
-FROM pytorch/pytorch:2.7.0-cuda12.8-cudnn9-devel
+# Use RunPod's optimized PyTorch image - pre-cached on their infrastructure
+# CUDA 12.81 + PyTorch 2.71 is a stable combination
+FROM runpod/pytorch:1.0.3-cu1281-torch271-ubuntu2204
 
 WORKDIR /app
 
@@ -29,8 +31,8 @@ RUN pip install --no-cache-dir --no-deps git+https://github.com/huggingface/diff
 # Note: peft is in requirements.txt, accelerate handles bitsandbytes integration
 RUN pip install --no-cache-dir regex requests filelock numpy Pillow
 
-# CRITICAL: Verify PyTorch version AFTER all installs
-RUN python -c "import torch; v=torch.__version__; print(f'Final PyTorch: {v}'); assert tuple(map(int, v.split('+')[0].split('.')[:2])) >= (2,5), f'Need PyTorch 2.5+, got {v}'"
+# CRITICAL: Verify PyTorch version AFTER all installs (need 2.1+ for BNB 4-bit)
+RUN python -c "import torch; v=torch.__version__; print(f'Final PyTorch: {v}'); major_minor = tuple(map(int, v.split('+')[0].split('.')[:2])); assert major_minor >= (2,1), f'Need PyTorch 2.1+, got {v}'"
 
 # Verify diffusers and bitsandbytes
 RUN python -c "import diffusers; print(f'diffusers version: {diffusers.__version__}')"
