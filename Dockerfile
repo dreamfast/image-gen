@@ -3,13 +3,10 @@ FROM pytorch/pytorch:2.7.0-cuda12.8-cudnn9-devel
 WORKDIR /app
 
 # Set environment variables
-ENV MODEL_PATH=/models/zimage
-ENV GGUF_PATH=/models/z-image-turbo-Q6_K.gguf
+ENV MODEL_PATH=unsloth/Z-Image-Turbo-unsloth-bnb-4bit
 ENV LORA_PATH=/models/loras
 ENV HF_HOME=/models/hf_cache
 ENV PYTHONUNBUFFERED=1
-# Enable optimized CUDA kernels for GGUF (torch27-cu128 is supported)
-ENV DIFFUSERS_GGUF_CUDA_KERNELS=true
 
 # Check initial PyTorch version
 RUN python -c "import torch; print(f'Initial PyTorch: {torch.__version__}')"
@@ -21,39 +18,28 @@ RUN apt-get update && apt-get install -y git wget && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install gguf package for GGUF model loading
-RUN pip install --no-cache-dir gguf
-
-# Install kernels for optimized CUDA GGUF inference (torch27-cu128 supported)
-RUN pip install --no-cache-dir kernels
+# Install bitsandbytes for 4-bit quantization
+RUN pip install --no-cache-dir bitsandbytes
 
 # Install diffusers from source WITHOUT letting it change torch
 # --no-deps prevents diffusers from downgrading torch
 RUN pip install --no-cache-dir --no-deps git+https://github.com/huggingface/diffusers.git
 
 # Install diffusers dependencies that we don't already have (excluding torch)
-RUN pip install --no-cache-dir regex requests filelock numpy Pillow peft
+# Note: peft is in requirements.txt, accelerate handles bitsandbytes integration
+RUN pip install --no-cache-dir regex requests filelock numpy Pillow
 
 # CRITICAL: Verify PyTorch version AFTER all installs
 RUN python -c "import torch; v=torch.__version__; print(f'Final PyTorch: {v}'); assert tuple(map(int, v.split('+')[0].split('.')[:2])) >= (2,5), f'Need PyTorch 2.5+, got {v}'"
 
-# Verify diffusers, ZImagePipeline, and GGUF support
+# Verify diffusers and bitsandbytes
 RUN python -c "import diffusers; print(f'diffusers version: {diffusers.__version__}')"
-RUN python -c "from diffusers import ZImagePipeline, ZImageTransformer2DModel, GGUFQuantizationConfig; print('GGUF imports successful!')"
+RUN python -c "import bitsandbytes; print('bitsandbytes imported successfully')"
 
-# Download Z-Image Turbo components (text encoder, VAE, tokenizer, scheduler)
-# We exclude only the transformer weights since we're using GGUF for that
-RUN python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download('Tongyi-MAI/Z-Image-Turbo', local_dir='/models/zimage', \
-    ignore_patterns=['transformer/*'])"
-
-# Download GGUF model from Hugging Face
-RUN python -c "from huggingface_hub import hf_hub_download; \
-    hf_hub_download('unsloth/Z-Image-Turbo-GGUF', 'z-image-turbo-Q6_K.gguf', \
-    local_dir='/models', local_dir_use_symlinks=False)"
-
-# Verify GGUF download
-RUN ls -la /models/*.gguf
+# Pre-download the 4-bit quantized model
+RUN python -c "from diffusers import DiffusionPipeline; \
+    DiffusionPipeline.from_pretrained('unsloth/Z-Image-Turbo-unsloth-bnb-4bit', \
+    cache_dir='/models/hf_cache')"
 
 # Create LoRA directory
 RUN mkdir -p /models/loras
@@ -66,9 +52,6 @@ RUN wget -O /models/loras/better_nudes.safetensors "https://romancify-build.b-cd
 
 # Verify LoRA downloads
 RUN ls -la /models/loras/
-
-# List model files to verify download
-RUN ls -la /models/zimage/
 
 # Copy handler
 COPY handler.py .

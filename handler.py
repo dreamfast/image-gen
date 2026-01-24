@@ -1,7 +1,7 @@
 """
-Z-Image Turbo RunPod Serverless Handler (GGUF + LoRAs)
+Z-Image Turbo RunPod Serverless Handler (BNB 4-bit + LoRAs)
 
-Loads Z-Image Turbo GGUF quantized model with LoRAs at container start,
+Loads Z-Image Turbo 4-bit quantized model with LoRAs at container start,
 then handles inference requests returning base64-encoded images.
 """
 
@@ -12,7 +12,7 @@ import sys
 import traceback
 
 print("=" * 60)
-print("Z-Image Turbo Handler Starting (GGUF + LoRAs)...")
+print("Z-Image Turbo Handler Starting (BNB 4-bit + LoRAs)...")
 print("=" * 60)
 print(f"Python version: {sys.version}")
 print(f"Working directory: {os.getcwd()}")
@@ -40,34 +40,24 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
-# Import diffusers with GGUF support
+# Import diffusers
 try:
-    from diffusers import ZImagePipeline, ZImageTransformer2DModel, GGUFQuantizationConfig
-    print("ZImagePipeline, ZImageTransformer2DModel, GGUFQuantizationConfig imported successfully")
-except ImportError as e:
-    print(f"ERROR: Required diffusers components not found!")
-    print(f"Make sure diffusers is installed from source with GGUF support.")
-    print(f"Error: {e}")
-    traceback.print_exc()
-    sys.exit(1)
+    from diffusers import DiffusionPipeline
+    print("DiffusionPipeline imported successfully")
 except Exception as e:
-    print(f"ERROR importing diffusers components: {e}")
+    print(f"ERROR importing diffusers: {e}")
     traceback.print_exc()
     sys.exit(1)
 
 # Model paths (set during Docker build)
-MODEL_PATH = os.environ.get("MODEL_PATH", "/models/zimage")
-GGUF_PATH = os.environ.get("GGUF_PATH", "/models/z-image-turbo-Q6_K.gguf")
+MODEL_PATH = os.environ.get("MODEL_PATH", "unsloth/Z-Image-Turbo-unsloth-bnb-4bit")
 LORA_PATH = os.environ.get("LORA_PATH", "/models/loras")
+HF_CACHE = os.environ.get("HF_HOME", "/models/hf_cache")
 
-print(f"Model config path: {MODEL_PATH}")
-print(f"GGUF model path: {GGUF_PATH}")
+print(f"Model: {MODEL_PATH}")
 print(f"LoRA path: {LORA_PATH}")
-print(f"GGUF exists: {os.path.exists(GGUF_PATH)}")
-print(f"Model config exists: {os.path.exists(MODEL_PATH)}")
+print(f"HF cache: {HF_CACHE}")
 
-if os.path.exists(MODEL_PATH):
-    print(f"Model config contents: {os.listdir(MODEL_PATH)[:10]}...")
 if os.path.exists(LORA_PATH):
     print(f"LoRA files: {os.listdir(LORA_PATH)}")
 
@@ -88,27 +78,19 @@ DEFAULTS = {
 
 
 def load_pipeline():
-    """Load the Z-Image Turbo GGUF pipeline with LoRAs."""
-    print("Loading Z-Image Turbo GGUF pipeline...")
-    print(f"  GGUF file: {GGUF_PATH}")
-    print(f"  compute_dtype: bfloat16")
+    """Load the Z-Image Turbo 4-bit pipeline with LoRAs."""
+    print("Loading Z-Image Turbo 4-bit pipeline...")
 
-    # Load transformer from GGUF with quantization config
-    print("Loading GGUF transformer...")
-    transformer = ZImageTransformer2DModel.from_single_file(
-        GGUF_PATH,
-        quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
-        dtype=torch.bfloat16,  # Note: use 'dtype' not 'torch_dtype' for from_single_file
-    )
-    print("  Transformer loaded from GGUF")
-
-    # Create pipeline with the quantized transformer
-    print("Creating pipeline from pretrained config...")
-    pipe = ZImagePipeline.from_pretrained(
+    # Load the 4-bit quantized model
+    pipe = DiffusionPipeline.from_pretrained(
         MODEL_PATH,
-        transformer=transformer,
-        torch_dtype=torch.bfloat16,  # 'torch_dtype' is correct for from_pretrained
+        torch_dtype=torch.bfloat16,
+        cache_dir=HF_CACHE,
     )
+
+    # Move to GPU
+    print("Moving pipeline to CUDA...")
+    pipe.to("cuda")
 
     # Load LoRAs with their respective strengths
     print("Loading LoRAs...")
@@ -136,10 +118,6 @@ def load_pipeline():
         print(f"  {len(adapter_names)} LoRAs active")
     else:
         print("  No LoRAs loaded")
-
-    # Move to GPU
-    print("Moving pipeline to CUDA...")
-    pipe.to("cuda")
 
     # Memory optimizations
     if hasattr(pipe, 'enable_attention_slicing'):
@@ -191,7 +169,7 @@ def handler(job):
         seed (int|null): Random seed used
         gpu (str): GPU name used
 
-    Note: negative_prompt is ignored - Z-Image Turbo uses guidance_scale=0.0
+    Note: Z-Image Turbo uses guidance_scale=0.0 (no CFG)
     """
     job_input = job["input"]
 
@@ -236,7 +214,7 @@ def handler(job):
         signal.alarm(30)  # 30 second timeout
 
         with torch.inference_mode():
-            # Z-Image Turbo requires guidance_scale=0.0 (no CFG)
+            # Z-Image Turbo uses guidance_scale=0.0 (no CFG)
             result = pipe(
                 prompt=prompt,
                 height=height,
