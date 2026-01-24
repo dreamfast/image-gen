@@ -1,11 +1,11 @@
-# Use RunPod's optimized PyTorch image (pre-cached, worked with full model)
-# PyTorch 2.8.0 + CUDA 12.81 - 4-bit model should use less VRAM
+# Use RunPod's optimized PyTorch image
+# PyTorch 2.8.0 + CUDA 12.81 - Full BF16 model (~20GB VRAM)
 FROM runpod/pytorch:1.0.3-cu1281-torch280-ubuntu2204
 
 WORKDIR /app
 
 # Set environment variables
-ENV MODEL_PATH=unsloth/Z-Image-Turbo-unsloth-bnb-4bit
+ENV MODEL_PATH=Tongyi-MAI/Z-Image-Turbo
 ENV LORA_PATH=/models/loras
 ENV HF_HOME=/models/hf_cache
 ENV PYTHONUNBUFFERED=1
@@ -20,28 +20,23 @@ RUN apt-get update && apt-get install -y git wget && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install bitsandbytes for 4-bit quantization
-RUN pip install --no-cache-dir bitsandbytes
-
 # Install diffusers from source WITHOUT letting it change torch
 # --no-deps prevents diffusers from downgrading torch
 RUN pip install --no-cache-dir --no-deps git+https://github.com/huggingface/diffusers.git
 
 # Install diffusers dependencies that we don't already have (excluding torch)
-# Note: peft is in requirements.txt, accelerate handles bitsandbytes integration
 RUN pip install --no-cache-dir regex requests filelock numpy Pillow
 
 # CRITICAL: Verify PyTorch version AFTER all installs (need 2.5+ for diffusers GQA support)
 RUN python -c "import torch; v=torch.__version__; print(f'Final PyTorch: {v}'); major_minor = tuple(map(int, v.split('+')[0].split('.')[:2])); assert major_minor >= (2,5), f'Need PyTorch 2.5+, got {v}'"
 
-# Verify diffusers and bitsandbytes
+# Verify diffusers
 RUN python -c "import diffusers; print(f'diffusers version: {diffusers.__version__}')"
-RUN python -c "import bitsandbytes; print('bitsandbytes imported successfully')"
 
-# Pre-download the 4-bit quantized model files (without loading - no GPU during build)
+# Pre-download the full BF16 model files (without loading - no GPU during build)
 RUN pip install --no-cache-dir huggingface_hub && \
     python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download('unsloth/Z-Image-Turbo-unsloth-bnb-4bit', \
+    snapshot_download('Tongyi-MAI/Z-Image-Turbo', \
     cache_dir='/models/hf_cache')"
 
 # Create LoRA directory

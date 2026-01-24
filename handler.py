@@ -1,7 +1,7 @@
 """
-Z-Image Turbo RunPod Serverless Handler (BNB 4-bit + LoRAs)
+Z-Image Turbo RunPod Serverless Handler (BF16 + LoRAs)
 
-Loads Z-Image Turbo 4-bit quantized model with LoRAs at container start,
+Loads Z-Image Turbo full BF16 model with LoRAs at container start,
 then handles inference requests returning base64-encoded images.
 """
 
@@ -12,7 +12,7 @@ import sys
 import traceback
 
 print("=" * 60)
-print("Z-Image Turbo Handler Starting (BNB 4-bit + LoRAs)...")
+print("Z-Image Turbo Handler Starting (BF16 + LoRAs)...")
 print("=" * 60)
 print(f"Python version: {sys.version}")
 print(f"Working directory: {os.getcwd()}")
@@ -40,18 +40,17 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
-# Import diffusers and transformers for BNB config
+# Import diffusers
 try:
     from diffusers import DiffusionPipeline
-    from transformers import BitsAndBytesConfig
-    print("DiffusionPipeline and BitsAndBytesConfig imported successfully")
+    print("DiffusionPipeline imported successfully")
 except Exception as e:
-    print(f"ERROR importing diffusers/transformers: {e}")
+    print(f"ERROR importing diffusers: {e}")
     traceback.print_exc()
     sys.exit(1)
 
 # Model paths (set during Docker build)
-MODEL_PATH = os.environ.get("MODEL_PATH", "unsloth/Z-Image-Turbo-unsloth-bnb-4bit")
+MODEL_PATH = os.environ.get("MODEL_PATH", "Tongyi-MAI/Z-Image-Turbo")
 LORA_PATH = os.environ.get("LORA_PATH", "/models/loras")
 HF_CACHE = os.environ.get("HF_HOME", "/models/hf_cache")
 
@@ -79,15 +78,15 @@ DEFAULTS = {
 
 
 def load_pipeline():
-    """Load the Z-Image Turbo 4-bit pipeline with LoRAs."""
-    print("Loading Z-Image Turbo 4-bit pipeline...")
+    """Load the Z-Image Turbo BF16 pipeline with LoRAs."""
+    print("Loading Z-Image Turbo BF16 pipeline...")
 
     # Clear any existing CUDA memory
     torch.cuda.empty_cache()
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
-    # Load the 4-bit quantized model with memory optimizations
+    # Load the full BF16 model with memory optimizations
     pipe = DiffusionPipeline.from_pretrained(
         MODEL_PATH,
         torch_dtype=torch.bfloat16,
