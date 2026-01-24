@@ -1,6 +1,6 @@
-# Use RunPod's optimized PyTorch image - pre-cached on their infrastructure
-# CUDA 12.81 + PyTorch 2.71 is a stable combination
-FROM runpod/pytorch:1.0.3-cu1281-torch271-ubuntu2204
+# Use official PyTorch image with CUDA 12.4 (compatible with more GPU drivers)
+# RunPod's CUDA 12.8+ images require newer drivers than some workers have
+FROM pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel
 
 WORKDIR /app
 
